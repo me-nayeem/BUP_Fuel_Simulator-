@@ -1,0 +1,127 @@
+// Stores only what the simulator does not: our intelligence and decision evidence.
+// Depots, stations, routes and allocations stay authoritative in the simulator.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum RecommendationStatus {
+  PROPOSED
+  AWAITING_REVIEW
+  EXECUTED
+  REJECTED
+  SUPERSEDED
+  FAILED
+}
+
+enum DecisionAction {
+  APPROVED
+  REJECTED
+  MODIFIED
+  AUTO_EXECUTED
+}
+
+enum IncidentSeverity {
+  INFO
+  WARNING
+  CRITICAL
+}
+
+model Recommendation {
+  id                 String               @id
+  generatedTick      Int
+  stationId          String
+  fuelType           String
+  sourceDepotId      String
+  routeId            String
+  quantity           Float
+  riskBefore         Float
+  riskAfter          Float
+  stockoutProbBefore Float
+  stockoutProbAfter  Float
+  forecastLiters     Float
+  confidence         String
+  engine             String
+  status             RecommendationStatus @default(PROPOSED)
+  explanation        Json
+  alternatives       Json
+  createdAt          DateTime             @default(now())
+  decisions          Decision[]
+  executions         AllocationExecution[]
+
+  @@index([generatedTick])
+  @@index([stationId, fuelType])
+}
+
+model Decision {
+  id               String          @id @default(cuid())
+  recommendationId String
+  recommendation   Recommendation  @relation(fields: [recommendationId], references: [id])
+  action           DecisionAction
+  actor            String
+  reason           String?
+  tick             Int
+  createdAt        DateTime        @default(now())
+
+  @@index([recommendationId])
+}
+
+model AllocationExecution {
+  id                    String          @id @default(cuid())
+  idempotencyKey        String          @unique
+  recommendationId      String?
+  recommendation        Recommendation? @relation(fields: [recommendationId], references: [id])
+  simulatorAllocationId Int?
+  request               Json
+  httpStatus            Int
+  errorCode             String?
+  finalStatus           String?
+  createdTick           Int
+  arrivalTick           Int?
+  createdAt             DateTime        @default(now())
+  updatedAt             DateTime        @updatedAt
+
+  @@index([simulatorAllocationId])
+}
+
+model Incident {
+  id        String           @id @default(cuid())
+  kind      String
+  severity  IncidentSeverity
+  message   String
+  details   Json?
+  openedAt  DateTime         @default(now())
+  closedAt  DateTime?
+  tick      Int?
+
+  @@index([kind, closedAt])
+}
+
+model MetricSnapshot {
+  id                 String   @id @default(cuid())
+  tick               Int
+  serviceLevel       Float
+  servedLiters       Float
+  unmetLiters        Float
+  allocationLiters   Float
+  allocationFailures Int
+  forecastMae        Float?
+  createdAt          DateTime @default(now())
+
+  @@index([tick])
+}
+
+model Experiment {
+  id        String   @id @default(cuid())
+  strategy  String
+  scenario  String
+  ticks     Int
+  seed      Int
+  results   Json
+  createdAt DateTime @default(now())
+}
