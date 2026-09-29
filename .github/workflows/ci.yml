@@ -1,0 +1,54 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Lint · Typecheck · Test · Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+
+  deploy-smoke:
+    name: Package · Deploy · Health check
+    needs: verify
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and start the stack
+        run: docker compose up -d --build
+      - name: Wait for application health
+        run: |
+          for i in $(seq 1 30); do
+            if curl -fsS http://localhost:3000/api/health > health.json; then
+              cat health.json; break
+            fi
+            sleep 2
+          done
+          curl -fsS http://localhost:3000/api/health > /dev/null
+      - name: Smoke test the world-state API
+        run: |
+          curl -fsS http://localhost:3000/api/state | jq -e '.freshness.source == "LIVE" and (.world.stations | length) == 4'
+          curl -fsS http://localhost:3000/api/metrics | grep -q http_requests_total
+      - name: Logs on failure
+        if: failure()
+        run: docker compose logs --no-color
+      - name: Tear down
+        if: always()
+        run: docker compose down -v

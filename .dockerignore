@@ -1,0 +1,15 @@
+node_modules
+.next
+.git
+.github
+context
+src/generated
+coverage
+load/results
+docs
+*.log
+.env
+.env.*
+!.env.example
+Dockerfile
+docker-compose.yml
