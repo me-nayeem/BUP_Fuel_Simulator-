@@ -1,0 +1,46 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Build output
+dist/
+build/
+out/
+.next/
+.nuxt/
+.output/
+.vercel/
+.turbo/
+coverage/
+
+# Lock files
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+bun.lockb
+
+# Environment files
+.env
+.env.*
+
+# Logs and caches
+*.log
+.cache/
+.eslintcache
+
+# Generated / minified assets
+*.min.js
+*.min.css
+*.map
+
+# Python (if used for backend)
+__pycache__/
+.venv/
+venv/
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
