@@ -44,3 +44,9 @@ venv/
 .idea/
 .DS_Store
 Thumbs.db
+
+# Generated Prisma client
+src/generated/
+
+# Hackathon source material
+context/

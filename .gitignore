@@ -1,1 +1,40 @@
 context/
+
+# Dependencies
+node_modules/
+
+# Build output
+.next/
+out/
+build/
+dist/
+coverage/
+*.tsbuildinfo
+next-env.d.ts
+
+# Prisma generated client
+src/generated/
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Logs and caches
+*.log
+.cache/
+.eslintcache
+
+# Load-test raw output
+load/results/*.json
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+AGENTS.md
+CLAUDE.md
+tmp/
+audit/
