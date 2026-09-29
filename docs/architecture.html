@@ -1,0 +1,423 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Fuel Ops Command Center — Architecture</title>
+<style>
+  @page { size: A4 landscape; margin: 8mm; }
+  @media print { html { zoom: 0.9; } .page { min-height: 0; height: 208mm; overflow: hidden; } }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: 'Segoe UI', Inter, system-ui, Arial, sans-serif; color: #0f172a; background: #ffffff; }
+  .page { width: 277mm; min-height: 188mm; padding: 4mm 2mm; page-break-after: always; break-after: page; }
+  .page:last-child { page-break-after: auto; break-after: auto; }
+  h1 { font-size: 26px; margin: 0 0 2px; letter-spacing: -0.3px; }
+  h2 { font-size: 19px; margin: 0 0 8px; color: #0e1a2b; }
+  h3 { font-size: 14px; margin: 0 0 6px; color: #1d4ed8; text-transform: uppercase; letter-spacing: 0.6px; }
+  p, li { font-size: 12.5px; line-height: 1.45; margin: 0; }
+  ul { margin: 0; padding-left: 16px; }
+  li { margin-bottom: 3px; }
+  .sub { color: #475569; font-size: 13px; margin-bottom: 10px; }
+  .banner { background: #0e1a2b; color: #fff; border-radius: 10px; padding: 12px 16px; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center; }
+  .banner .tag { font-size: 12px; color: #cbd5e1; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .grid3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
+  .card { border: 1px solid #e2e8f0; border-radius: 10px; padding: 10px 12px; background: #fff; }
+  .card.blue { border-left: 4px solid #1d4ed8; }
+  .card.green { border-left: 4px solid #15803d; }
+  .card.amber { border-left: 4px solid #b45309; }
+  .card.violet { border-left: 4px solid #6d28d9; }
+  .card.red { border-left: 4px solid #b91c1c; }
+  .big { font-size: 28px; font-weight: 700; color: #0e1a2b; }
+  .muted { color: #64748b; }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  th { text-align: left; color: #475569; font-weight: 600; border-bottom: 1.5px solid #cbd5e1; padding: 5px 6px; }
+  td { border-bottom: 1px solid #e2e8f0; padding: 5px 6px; vertical-align: top; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .win { font-weight: 700; color: #15803d; }
+  .loop { display: grid; grid-template-columns: repeat(8, 1fr); gap: 5px; margin: 6px 0 10px; }
+  .step { border-radius: 8px; padding: 8px 7px; color: #fff; min-height: 128px; }
+  .step b { display: block; font-size: 13px; margin-bottom: 4px; letter-spacing: 0.3px; }
+  .step span { font-size: 11px; line-height: 1.35; display: block; }
+  .footer { font-size: 10.5px; color: #94a3b8; margin-top: 8px; }
+  .pill { display: inline-block; font-size: 11px; padding: 1px 8px; border-radius: 999px; background: #e8efff; color: #1d4ed8; margin: 0 4px 4px 0; }
+</style>
+</head>
+<body>
+
+<section class="page">
+  <div class="banner">
+    <div>
+      <h1 style="color:#fff">Fuel Ops Command Center</h1>
+      <div class="tag">Fuel Supply Intelligence &amp; Resilience Platform · BUP CSE Fest 2026 Hackathon</div>
+    </div>
+    <div class="tag" style="text-align:right">Observe → Detect → Predict → Decide → Simulate → Act → Monitor → Recover<br/>All data comes from the BUP Fuel Supply Simulator (simulated, not real infrastructure)</div>
+  </div>
+
+  <div class="grid3">
+    <div class="card amber">
+      <h3>The problem</h3>
+      <p>A simulated Bangladeshi fuel network: <b>2 depots, 4 stations, 6 routes, 3 fuels</b>, 15-minute ticks. Customers consume fuel every tick; supply ships only reach depots. Someone must decide <b>which depot sends how much of which fuel, on which route, and when</b> — through demand spikes, blocked routes, outages, late or reduced supply, and failing software.</p>
+      <p style="margin-top:6px">Measured on the real simulator with <b>no action</b>: the first station runs dry at tick 65 (≈16 h) and only <b>46.1%</b> of demand is served over 2 days.</p>
+    </div>
+    <div class="card blue">
+      <h3>Our approach</h3>
+      <ul>
+        <li><b>Probe first, then design.</b> We measured the simulator before coding: demand model, lifecycle timing, dispatch rules, error formats.</li>
+        <li><b>One brain, one loop.</b> A single server-side control loop observes, plans and acts every tick; the UI only reads cached state.</li>
+        <li><b>Explainable optimisation, not a black box.</b> Hour-aware forecast → risk → constraint-safe planner → what-if → action.</li>
+        <li><b>Human in the loop where it matters.</b> Routine shipments are automatic; risky ones wait for the operator.</li>
+        <li><b>Resilience as a feature.</b> Every failure mode has a visible, tested behaviour.</li>
+      </ul>
+    </div>
+    <div class="card violet">
+      <h3>Key insight</h3>
+      <p>We verified on <b>2,304 observations</b> that demand follows an exact pattern:</p>
+      <p style="margin:6px 0; font-family: Consolas, monospace; font-size: 12px; background:#f5f3ff; padding:6px; border-radius:6px">demand/tick = daily profile ÷ 96 × hour factor × region factor × spike multiplier × (±10% noise)</p>
+      <p>Industrial demand jumps <b>3.4×</b> at 06:00. A moving average lags that jump; our model sees it coming. We still calibrate online against real observations and report the forecast error.</p>
+    </div>
+  </div>
+
+  <div class="grid2" style="margin-top:10px">
+    <div class="card green">
+      <h3>What makes it unique</h3>
+      <ul>
+        <li><b>Event look-ahead:</b> reads <i>scheduled</i> crises and avoids a route before it is disrupted; pre-scales forecasts for upcoming demand spikes.</li>
+        <li><b>Shared-budget planner:</b> depot stock and per-tick dispatch capacity are deducted across all shipments in the same tick — no 409 rejections.</li>
+        <li><b>Auto-cancel doomed shipments:</b> pending shipments on a route about to be disrupted are cancelled and re-routed (fuel returns to the depot).</li>
+        <li><b>Stable idempotency keys:</b> retries and duplicate app instances can never double-ship.</li>
+        <li><b>Measured proof:</b> a built-in deterministic experiment runner compares strategies on identical scenarios.</li>
+        <li><b>Grounded AI:</b> OpenAI explains decisions and incidents from live facts only, never executes, and falls back to built-in text.</li>
+      </ul>
+    </div>
+    <div class="card blue">
+      <h3>Results (measured, simulator ground truth)</h3>
+      <table>
+        <tr><th>Scenario (192 ticks = 2 days)</th><th class="num">No action</th><th class="num">Threshold rule</th><th class="num">Our planner</th></tr>
+        <tr><td>Normal operations</td><td class="num">46.1%</td><td class="num">100%</td><td class="num win">100%</td></tr>
+        <tr><td>Combined crisis</td><td class="num">42.7%</td><td class="num">100%</td><td class="num win">100%</td></tr>
+        <tr><td>Severe crisis — service level</td><td class="num">33.9%</td><td class="num">95.5%</td><td class="num win">97.7%</td></tr>
+        <tr><td>Severe crisis — unmet demand</td><td class="num">167,734 L</td><td class="num">11,377 L</td><td class="num win">5,877 L (−48%)</td></tr>
+        <tr><td>Severe crisis — stockout ticks</td><td class="num">1,583</td><td class="num">38</td><td class="num win">26</td></tr>
+      </table>
+      <p class="muted" style="margin-top:6px">Live run, autopilot AUTO at full speed (8 ticks/s): <b>100% service level, 0 failed shipments</b> over 168 ticks and through a combined demand spike + route disruption. Strategies review the network once per simulated hour; same seed and events for every run.</p>
+    </div>
+  </div>
+  <div class="footer">Page 1 / 4 · Overview</div>
+</section>
+
+<section class="page">
+  <h2>End-to-end architecture</h2>
+  <div class="sub">One Next.js application (UI + API + engine) next to the organizer's simulator, orchestrated with Docker Compose. REST is the source of truth; SSE is only a trigger.</div>
+  <svg viewBox="0 0 1500 760" width="100%" style="display:block">
+    <defs>
+      <marker id="arr" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#334155"/></marker>
+      <marker id="arrg" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#15803d"/></marker>
+      <marker id="arrv" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#6d28d9"/></marker>
+    </defs>
+
+    <rect x="10" y="10" width="1480" height="740" rx="18" fill="#f8fafc" stroke="#e2e8f0"/>
+    <text x="30" y="40" font-size="15" font-weight="700" fill="#64748b">DOCKER COMPOSE STACK · simulator-api · postgres · migrate · app</text>
+
+    <rect x="30" y="170" width="230" height="330" rx="14" fill="#fff7ed" stroke="#b45309" stroke-width="2"/>
+    <text x="145" y="200" font-size="17" font-weight="700" text-anchor="middle" fill="#7c2d12">BUP Fuel Simulator</text>
+    <text x="145" y="220" font-size="12" text-anchor="middle" fill="#9a3412">organizer image, unchanged</text>
+    <g font-size="12.5" fill="#431407">
+      <text x="48" y="255">GET /v1/* world state</text>
+      <text x="48" y="278">GET /v1/stream (SSE)</text>
+      <text x="48" y="301">POST /v1/allocations</text>
+      <text x="48" y="324">POST …/cancel</text>
+      <text x="48" y="347">/admin/* scenario tools</text>
+      <text x="48" y="380" fill="#9a3412">2 depots · 4 stations</text>
+      <text x="48" y="400" fill="#9a3412">6 routes · 3 fuels</text>
+      <text x="48" y="420" fill="#9a3412">15-min ticks · 8 ticks/s</text>
+      <text x="48" y="440" fill="#9a3412">deterministic seed</text>
+      <text x="48" y="475" fill="#9a3412">faults: latency, 503,</text>
+      <text x="48" y="492" fill="#9a3412">stale data, SSE drop</text>
+    </g>
+
+    <rect x="320" y="100" width="260" height="235" rx="14" fill="#fff" stroke="#1d4ed8" stroke-width="2"/>
+    <text x="450" y="128" font-size="16" font-weight="700" text-anchor="middle" fill="#1e3a8a">Simulator Client</text>
+    <g font-size="12.5" fill="#1e293b">
+      <text x="338" y="158">• Zod-validated responses</text>
+      <text x="338" y="181">• 2.5 s timeout, 2 retries + backoff</text>
+      <text x="338" y="204">• retry only 503 / timeout, never 409</text>
+      <text x="338" y="227">• circuit breaker (5 fails → 3 s)</text>
+      <text x="338" y="250">• max 4 concurrent requests</text>
+      <text x="338" y="273">• X-Simulator-Stale detection</text>
+      <text x="338" y="296">• error shapes: detail / error / 422</text>
+      <text x="338" y="319">• latency + error metrics</text>
+    </g>
+
+    <rect x="320" y="370" width="260" height="130" rx="14" fill="#fff" stroke="#1d4ed8" stroke-width="2"/>
+    <text x="450" y="398" font-size="16" font-weight="700" text-anchor="middle" fill="#1e3a8a">SSE Listener</text>
+    <g font-size="12.5" fill="#1e293b">
+      <text x="338" y="426">• tick / allocation / inventory</text>
+      <text x="338" y="449">• reconnect 1 → 10 s backoff</text>
+      <text x="338" y="472">• 40 s silence watchdog</text>
+      <text x="338" y="492">• full REST refresh on reconnect</text>
+    </g>
+
+    <rect x="640" y="100" width="250" height="160" rx="14" fill="#fff" stroke="#0e7490" stroke-width="2"/>
+    <text x="765" y="128" font-size="16" font-weight="700" text-anchor="middle" fill="#155e75">World Store</text>
+    <g font-size="12.5" fill="#1e293b">
+      <text x="656" y="158">• 10 resources in parallel</text>
+      <text x="656" y="181">• one normalised WorldState</text>
+      <text x="656" y="204">• last-known-good on failure</text>
+      <text x="656" y="227">• stale data never overwrites</text>
+      <text x="656" y="250">• shared in-flight reads</text>
+    </g>
+
+    <rect x="640" y="300" width="250" height="200" rx="14" fill="#fff" stroke="#0e7490" stroke-width="2"/>
+    <text x="765" y="328" font-size="16" font-weight="700" text-anchor="middle" fill="#155e75">Control Loop</text>
+    <g font-size="12.5" fill="#1e293b">
+      <text x="656" y="358">• triggered by every SSE event</text>
+      <text x="656" y="381">• 500 ms polling fallback</text>
+      <text x="656" y="404">• coalesced, ≥ 250 ms apart</text>
+      <text x="656" y="427">• refresh → plan → cancel</text>
+      <text x="656" y="447">   doomed → autopilot → refresh</text>
+      <text x="656" y="473">• pausable for experiments</text>
+      <text x="656" y="493">• cycle time exported</text>
+    </g>
+
+    <rect x="950" y="70" width="260" height="440" rx="14" fill="#faf5ff" stroke="#6d28d9" stroke-width="2"/>
+    <text x="1080" y="98" font-size="16" font-weight="700" text-anchor="middle" fill="#4c1d95">Intelligence</text>
+    <rect x="965" y="112" width="230" height="78" rx="10" fill="#fff" stroke="#c4b5fd"/>
+    <text x="978" y="134" font-size="13" font-weight="700" fill="#4c1d95">1 · Demand forecast</text>
+    <text x="978" y="154" font-size="11.5" fill="#1e293b">profile × hour × region × spike</text>
+    <text x="978" y="172" font-size="11.5" fill="#1e293b">online calibration · MAPE tracked</text>
+    <rect x="965" y="200" width="230" height="78" rx="10" fill="#fff" stroke="#c4b5fd"/>
+    <text x="978" y="222" font-size="13" font-weight="700" fill="#4c1d95">2 · Projection &amp; risk</text>
+    <text x="978" y="242" font-size="11.5" fill="#1e293b">tick-by-tick stock incl. inbound</text>
+    <text x="978" y="260" font-size="11.5" fill="#1e293b">time-to-empty → risk 0–100</text>
+    <rect x="965" y="288" width="230" height="96" rx="10" fill="#fff" stroke="#c4b5fd"/>
+    <text x="978" y="310" font-size="13" font-weight="700" fill="#4c1d95">3 · Planner</text>
+    <text x="978" y="330" font-size="11.5" fill="#1e293b">hard limits before any scoring</text>
+    <text x="978" y="348" font-size="11.5" fill="#1e293b">shared depot stock + dispatch</text>
+    <text x="978" y="366" font-size="11.5" fill="#1e293b">look-ahead on scheduled events</text>
+    <rect x="965" y="394" width="230" height="52" rx="10" fill="#fff" stroke="#c4b5fd"/>
+    <text x="978" y="416" font-size="13" font-weight="700" fill="#4c1d95">4 · What-if</text>
+    <text x="978" y="434" font-size="11.5" fill="#1e293b">risk before → after, hours left</text>
+    <rect x="965" y="454" width="230" height="46" rx="10" fill="#fef2f2" stroke="#fca5a5"/>
+    <text x="978" y="474" font-size="12.5" font-weight="700" fill="#991b1b">Fallback planner</text>
+    <text x="978" y="492" font-size="11.5" fill="#7f1d1d">threshold rule if planner fails</text>
+
+    <rect x="1270" y="100" width="200" height="400" rx="14" fill="#f0fdf4" stroke="#15803d" stroke-width="2"/>
+    <text x="1370" y="128" font-size="16" font-weight="700" text-anchor="middle" fill="#14532d">Decisions</text>
+    <g font-size="12" fill="#1e293b">
+      <text x="1284" y="160" font-weight="700">Autopilot modes</text>
+      <text x="1284" y="180">MANUAL · ASSISTED · AUTO</text>
+      <text x="1284" y="210" font-weight="700">Needs review when</text>
+      <text x="1284" y="230">cross-region route</text>
+      <text x="1284" y="248">constrained depot</text>
+      <text x="1284" y="266">crisis at station</text>
+      <text x="1284" y="284">forecast uncertain</text>
+      <text x="1284" y="302">fallback planner</text>
+      <text x="1284" y="332" font-weight="700">Execution</text>
+      <text x="1284" y="352">re-check latest state</text>
+      <text x="1284" y="370">stable idempotency key</text>
+      <text x="1284" y="388">blocked on stale data</text>
+      <text x="1284" y="418" font-weight="700">Auto-cancel</text>
+      <text x="1284" y="438">pending on disrupted</text>
+      <text x="1284" y="456">route → re-plan</text>
+      <text x="1284" y="484" fill="#15803d" font-weight="700">every decision logged</text>
+    </g>
+
+    <line x1="260" y1="230" x2="316" y2="230" stroke="#334155" stroke-width="2.5" marker-end="url(#arr)"/>
+    <text x="263" y="220" font-size="11" fill="#475569">REST</text>
+    <line x1="260" y1="430" x2="316" y2="430" stroke="#334155" stroke-width="2.5" marker-end="url(#arr)"/>
+    <text x="264" y="420" font-size="11" fill="#475569">SSE</text>
+    <line x1="580" y1="180" x2="636" y2="180" stroke="#334155" stroke-width="2.5" marker-end="url(#arr)"/>
+    <line x1="580" y1="430" x2="636" y2="430" stroke="#334155" stroke-width="2.5" marker-end="url(#arr)"/>
+    <text x="586" y="420" font-size="11" fill="#475569">trigger</text>
+    <line x1="765" y1="260" x2="765" y2="296" stroke="#334155" stroke-width="2.5" marker-end="url(#arr)"/>
+    <line x1="890" y1="400" x2="946" y2="300" stroke="#334155" stroke-width="2.5" marker-end="url(#arr)"/>
+    <text x="896" y="360" font-size="11" fill="#475569">plan</text>
+    <line x1="1210" y1="300" x2="1266" y2="300" stroke="#334155" stroke-width="2.5" marker-end="url(#arr)"/>
+    <text x="1214" y="290" font-size="11" fill="#475569">recs</text>
+    <path d="M1370,100 L1370,58 L145,58 L145,166" fill="none" stroke="#15803d" stroke-width="3" marker-end="url(#arrg)"/>
+    <text x="700" y="52" font-size="12.5" font-weight="700" fill="#15803d" text-anchor="middle">POST /v1/allocations · POST /cancel  (the only domain writes)</text>
+
+    <rect x="30" y="560" width="330" height="170" rx="14" fill="#fff" stroke="#334155" stroke-width="1.5"/>
+    <text x="195" y="588" font-size="15" font-weight="700" text-anchor="middle">Operator UI · 11 pages</text>
+    <g font-size="12" fill="#1e293b">
+      <text x="46" y="614">Overview network map · Decisions</text>
+      <text x="46" y="634">Stations · Depots &amp; Routes · Shipments</text>
+      <text x="46" y="654">Events &amp; Alerts · AI Assistant</text>
+      <text x="46" y="674">System Health · Scenario Control</text>
+      <text x="46" y="694">Strategy Comparison</text>
+      <text x="46" y="718" fill="#475569">reads cached state only · 2 s refresh</text>
+    </g>
+
+    <rect x="390" y="560" width="330" height="170" rx="14" fill="#fff" stroke="#6d28d9" stroke-width="1.5"/>
+    <text x="555" y="588" font-size="15" font-weight="700" text-anchor="middle" fill="#4c1d95">AI Assistant (OpenAI)</text>
+    <g font-size="12" fill="#1e293b">
+      <text x="406" y="614">readable decision explanations</text>
+      <text x="406" y="634">network &amp; incident situation reports</text>
+      <text x="406" y="654">operator investigation Q&amp;A</text>
+      <text x="406" y="674">grounded in live JSON facts only</text>
+      <text x="406" y="694">never approves or executes</text>
+      <text x="406" y="718" fill="#b91c1c">fallback: built-in template text</text>
+    </g>
+
+    <rect x="750" y="560" width="330" height="170" rx="14" fill="#fff" stroke="#0e7490" stroke-width="1.5"/>
+    <text x="915" y="588" font-size="15" font-weight="700" text-anchor="middle" fill="#155e75">Observability</text>
+    <g font-size="12" fill="#1e293b">
+      <text x="766" y="614">health of 8 components</text>
+      <text x="766" y="634">p50 / p95 latency, error rate</text>
+      <text x="766" y="654">CPU, memory, event-loop lag</text>
+      <text x="766" y="674">Prometheus /api/metrics</text>
+      <text x="766" y="694">JSON logs + activity feed</text>
+      <text x="766" y="718" fill="#475569">forecast error, fallback, decisions</text>
+    </g>
+
+    <rect x="1110" y="560" width="360" height="170" rx="14" fill="#fff" stroke="#334155" stroke-width="1.5"/>
+    <text x="1290" y="588" font-size="15" font-weight="700" text-anchor="middle">PostgreSQL 17 · Prisma 7</text>
+    <g font-size="12" fill="#1e293b">
+      <text x="1126" y="614">stores only our evidence:</text>
+      <text x="1126" y="634">recommendations, decisions,</text>
+      <text x="1126" y="654">executions, incidents, experiments</text>
+      <text x="1126" y="674">simulator stays source of truth</text>
+      <text x="1126" y="694">writes are non-blocking</text>
+      <text x="1126" y="718" fill="#b91c1c">DB down → app keeps running</text>
+    </g>
+
+    <line x1="765" y1="500" x2="195" y2="556" stroke="#94a3b8" stroke-width="2" stroke-dasharray="6 5" marker-end="url(#arr)"/>
+    <line x1="1080" y1="510" x2="555" y2="556" stroke="#6d28d9" stroke-width="2" stroke-dasharray="6 5" marker-end="url(#arrv)"/>
+    <line x1="765" y1="500" x2="915" y2="556" stroke="#94a3b8" stroke-width="2" stroke-dasharray="6 5" marker-end="url(#arr)"/>
+    <line x1="1370" y1="500" x2="1290" y2="556" stroke="#94a3b8" stroke-width="2" stroke-dasharray="6 5" marker-end="url(#arr)"/>
+  </svg>
+  <div class="footer">Page 2 / 4 · Architecture · Stack: Next.js 16 · TypeScript · Tailwind 4 · Zod 4 · Prisma 7 · PostgreSQL 17 · Recharts · OpenAI gpt-4.1-mini · Docker Compose · GitHub Actions · Vitest · k6</div>
+</section>
+
+<section class="page">
+  <h2>What happens every tick — the engineering loop</h2>
+  <div class="sub">The brief's loop, implemented as one server-side cycle that runs on every simulator tick (and every 500 ms if the stream is down).</div>
+  <div class="loop">
+    <div class="step" style="background:#1e3a8a"><b>OBSERVE</b><span>SSE event arrives → read 10 REST resources in parallel → one WorldState</span></div>
+    <div class="step" style="background:#1d4ed8"><b>DETECT</b><span>low stock, active + scheduled crises, disrupted routes, stale data, API faults</span></div>
+    <div class="step" style="background:#0e7490"><b>PREDICT</b><span>hour-aware demand for the next 24 ticks per station × fuel; time-to-empty</span></div>
+    <div class="step" style="background:#6d28d9"><b>DECIDE</b><span>rank risks; pick depot, route, quantity inside every hard limit</span></div>
+    <div class="step" style="background:#7c3aed"><b>SIMULATE</b><span>replay the projection with the shipment: risk 91 → 18, hours left before → after</span></div>
+    <div class="step" style="background:#15803d"><b>ACT</b><span>autopilot sends routine shipments; risky ones wait for approval; doomed ones are cancelled</span></div>
+    <div class="step" style="background:#b45309"><b>MONITOR</b><span>shipment lifecycle, service level, forecast error, latency, component health</span></div>
+    <div class="step" style="background:#b91c1c"><b>RECOVER</b><span>retry, circuit breaker, last-known-good, fallback planner, SSE reconnect</span></div>
+  </div>
+
+  <div class="grid2">
+    <div class="card violet">
+      <h3>Decision pipeline for one station × fuel</h3>
+      <svg viewBox="0 0 640 300" width="100%">
+        <defs><marker id="a2" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#4c1d95"/></marker></defs>
+        <g font-size="12.5" fill="#1e293b">
+          <rect x="10" y="10" width="190" height="60" rx="8" fill="#f5f3ff" stroke="#c4b5fd"/>
+          <text x="20" y="34" font-weight="700" fill="#4c1d95">Need detected</text>
+          <text x="20" y="54">stock at lead+8 ticks &lt; 25%</text>
+          <rect x="225" y="10" width="190" height="60" rx="8" fill="#f5f3ff" stroke="#c4b5fd"/>
+          <text x="235" y="34" font-weight="700" fill="#4c1d95">Candidate routes</text>
+          <text x="235" y="54">every route to the station</text>
+          <rect x="440" y="10" width="190" height="60" rx="8" fill="#fef2f2" stroke="#fca5a5"/>
+          <text x="450" y="34" font-weight="700" fill="#991b1b">Hard filters</text>
+          <text x="450" y="54">never scored if invalid</text>
+          <rect x="440" y="95" width="190" height="120" rx="8" fill="#fff" stroke="#fca5a5"/>
+          <text x="450" y="117">route AVAILABLE, not</text>
+          <text x="450" y="135">  disrupted at departure</text>
+          <text x="450" y="155">station OPEN</text>
+          <text x="450" y="175">depot stock + dispatch left</text>
+          <text x="450" y="195">≤ max shipment, tank space</text>
+          <rect x="225" y="95" width="190" height="60" rx="8" fill="#f5f3ff" stroke="#c4b5fd"/>
+          <text x="235" y="119" font-weight="700" fill="#4c1d95">Quantity</text>
+          <text x="235" y="139">fill to 90%, minus inbound</text>
+          <rect x="10" y="95" width="190" height="60" rx="8" fill="#f5f3ff" stroke="#c4b5fd"/>
+          <text x="20" y="119" font-weight="700" fill="#4c1d95">Choose</text>
+          <text x="20" y="139">fastest, unconstrained depot</text>
+          <rect x="10" y="180" width="190" height="60" rx="8" fill="#f5f3ff" stroke="#c4b5fd"/>
+          <text x="20" y="204" font-weight="700" fill="#4c1d95">What-if</text>
+          <text x="20" y="224">risk after, hours after</text>
+          <rect x="225" y="180" width="190" height="60" rx="8" fill="#f0fdf4" stroke="#86efac"/>
+          <text x="235" y="204" font-weight="700" fill="#14532d">Review rules</text>
+          <text x="235" y="224">auto or operator</text>
+          <rect x="120" y="250" width="400" height="40" rx="8" fill="#15803d"/>
+          <text x="320" y="275" font-weight="700" fill="#fff" text-anchor="middle">POST /v1/allocations · deduct shared budgets</text>
+        </g>
+        <g stroke="#4c1d95" stroke-width="2" fill="none">
+          <line x1="200" y1="40" x2="222" y2="40" marker-end="url(#a2)"/>
+          <line x1="415" y1="40" x2="437" y2="40" marker-end="url(#a2)"/>
+          <line x1="535" y1="70" x2="535" y2="92" marker-end="url(#a2)"/>
+          <line x1="440" y1="125" x2="418" y2="125" marker-end="url(#a2)"/>
+          <line x1="225" y1="125" x2="203" y2="125" marker-end="url(#a2)"/>
+          <line x1="105" y1="155" x2="105" y2="177" marker-end="url(#a2)"/>
+          <line x1="200" y1="210" x2="222" y2="210" marker-end="url(#a2)"/>
+          <line x1="320" y1="240" x2="320" y2="247" marker-end="url(#a2)"/>
+        </g>
+      </svg>
+    </div>
+    <div>
+      <div class="card blue" style="margin-bottom:10px">
+        <h3>Crisis handling</h3>
+        <table>
+          <tr><th>Event</th><th>How the system responds</th></tr>
+          <tr><td>Demand spike</td><td>forecast × multiplier inside the window, pre-stock before it starts, risk re-ranked</td></tr>
+          <tr><td>Route disruption</td><td>route excluded before departure, pending shipments cancelled, alternate route (e.g. Patiya → Mirpur)</td></tr>
+          <tr><td>Station outage</td><td>no shipments to the station; stock kept for others</td></tr>
+          <tr><td>Depot constraint</td><td>still shippable, used last, needs operator review</td></tr>
+          <tr><td>Shipment delay / shortfall</td><td>updated supply schedule flows into depot budgets</td></tr>
+        </table>
+      </div>
+      <div class="card green">
+        <h3>Human in the loop</h3>
+        <p><b>ASSISTED</b> (default) automates routine shipments and sends consequential ones — cross-region, constrained depot, active crisis, uncertain forecast, fallback planner — to the Decisions page with the reason, alternatives, risk before → after and an <b>Explain with AI</b> button. Approvals re-check the latest state first.</p>
+      </div>
+    </div>
+  </div>
+  <div class="footer">Page 3 / 4 · Workflow</div>
+</section>
+
+<section class="page">
+  <h2>Resilience, deployment and evidence</h2>
+  <div class="sub">"Your job is not only to build the system. Your job is to keep it working." Every failure below was injected and observed during development.</div>
+  <div class="grid2">
+    <div class="card red">
+      <h3>Failure → detection → behaviour</h3>
+      <table>
+        <tr><th>Failure</th><th>Detected by</th><th>Behaviour</th></tr>
+        <tr><td>Simulator 503 / error rate</td><td>error body <i>error.code</i></td><td>retry with backoff → circuit opens → last-known-good shown with its age</td></tr>
+        <tr><td>Stale data</td><td>X-Simulator-Stale header</td><td>STALE banner, good state kept, autopilot paused</td></tr>
+        <tr><td>Latency</td><td>2.5 s timeout</td><td>retries, queue ≤ 4 in flight, latency panel amber</td></tr>
+        <tr><td>SSE disconnect</td><td>503 / 40 s silence</td><td>reconnect with backoff, 500 ms polling continues</td></tr>
+        <tr><td>Invalid payload</td><td>Zod validation</td><td>rejected, alert logged, good state kept</td></tr>
+        <tr><td>Planner failure</td><td>exception</td><td>fallback planner, health DEGRADED, operator approval</td></tr>
+        <tr><td>OpenAI unavailable</td><td>timeout / error</td><td>built-in template explanations</td></tr>
+        <tr><td>PostgreSQL down</td><td>SELECT 1 probe</td><td>health DEGRADED, operations continue in memory</td></tr>
+        <tr><td>Load on our API</td><td>shared cache</td><td>UI reads never multiply into simulator load</td></tr>
+      </table>
+    </div>
+    <div>
+      <div class="card blue" style="margin-bottom:10px">
+        <h3>Deployment &amp; DevOps</h3>
+        <p><b>docker compose up -d --build</b> starts four services: <span class="pill">simulator-api</span><span class="pill">postgres</span><span class="pill">migrate (one-shot)</span><span class="pill">app</span></p>
+        <p style="margin-top:6px">Multi-stage Dockerfile, non-root runtime, health checks, env-only config (no secrets in code). GitHub Actions: lint → typecheck → 32 unit tests → build → compose up → health + API smoke test.</p>
+      </div>
+      <div class="card violet" style="margin-bottom:10px">
+        <h3>Evidence for judges</h3>
+        <ul>
+          <li><b>Strategy Comparison</b> page: re-runs all scenarios on demand and stores results in PostgreSQL.</li>
+          <li><b>System Health</b> page + <b>/api/metrics</b>: live latency, error rate, resources.</li>
+          <li><b>k6</b> script (load/dashboard.js): 100 virtual users on the dashboard path + 20 req/s on the decision API, with p95 &lt; 500 ms thresholds.</li>
+          <li><b>Scenario Control</b>: inject any crisis or fault live and watch the platform respond.</li>
+        </ul>
+      </div>
+      <div class="card amber">
+        <h3>Engineering discoveries we fixed</h3>
+        <ul>
+          <li>Health checks proxied to the simulator exhausted its 15-connection pool under load → cached, shared probes + 4-request cap.</li>
+          <li>Supply schedule ends at tick 212 → evaluation uses the supplied 2-day window.</li>
+          <li>Replayed allocations return 201 (guide says 200) → both accepted.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+  <div class="footer">Page 4 / 4 · Resilience &amp; evidence · All numbers measured on the organizer simulator (seed 12345)</div>
+</section>
+
+</body>
+</html>
