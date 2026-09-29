@@ -1,0 +1,36 @@
+@import 'tailwindcss';
+@import '@fontsource-variable/inter';
+
+@theme {
+  --font-sans: 'Inter Variable', ui-sans-serif, system-ui, 'Segoe UI', Roboto, Arial, sans-serif;
+  --font-mono: ui-monospace, 'Cascadia Code', 'SFMono-Regular', Menlo, Consolas, monospace;
+
+  --color-page: #f3f5f9;
+  --color-surface: #ffffff;
+  --color-line: #e2e7ef;
+  --color-ink: #0f172a;
+  --color-ink-soft: #334155;
+  --color-ink-muted: #5b6b82;
+  --color-brand: #1d4ed8;
+  --color-brand-soft: #e8efff;
+  --color-sidebar: #0e1a2b;
+  --color-sidebar-hover: #1a2a40;
+  --color-sidebar-active: #22385a;
+
+  --color-diesel: #0f766e;
+  --color-petrol: #2563eb;
+  --color-octane: #7c3aed;
+}
+
+html {
+  font-size: 16px;
+}
+
+body {
+  background: var(--color-page);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  font-feature-settings:
+    'tnum' 1,
+    'cv11' 1;
+}
